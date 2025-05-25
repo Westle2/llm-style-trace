@@ -46,6 +46,7 @@ def main():
 
     # 数据划分
     lines = load_dataset(dataset_path)
+    random.shuffle(lines)
     split = int(0.9 * len(lines)) # 原模型是0.8, 内存不够了跑不动了
     train_dataset = prepare_dataset(lines[:split], tokenizer)
     eval_dataset = prepare_dataset(lines[split:], tokenizer)
