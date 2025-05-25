@@ -6,6 +6,8 @@ from datasets import Dataset
 from transformers import BertTokenizer, BertForSequenceClassification, TrainingArguments, Trainer
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 import torch
+from sklearn.preprocessing import LabelEncoder
+import pickle
 
 # 加载数据
 def load_dataset(jsonl_path):
@@ -18,7 +20,7 @@ def load_dataset(jsonl_path):
 def prepare_dataset(lines, tokenizer):
     texts = [l['text'] for l in lines]
     labels = [l['label'] for l in lines]
-    encodings = tokenizer(texts, truncation=True, padding=True, max_length=512)
+    encodings = tokenizer(texts, truncation=True, padding=True, max_length=256)
     encodings['labels'] = labels
     return Dataset.from_dict(encodings)
 
@@ -32,34 +34,45 @@ def compute_metrics(eval_pred):
 
 # 主程序
 def main():
-    # 设置参数
     model_name = 'hfl/chinese-bert-wwm-ext'
     dataset_path = 'merge.jsonl'
-    num_labels = 6 # qwen，gpt，human，deepseek，llama，文心一言
-    '''
-    这里做了六分类，或者先分出人类作者与大模型，再进行五分类。
-    '''
 
-    # 加载模型与分词器
+    # 加载数据
+    lines = load_dataset(dataset_path)
+
+    # 将 "model" 字段编码为数字标签
+    label_encoder = LabelEncoder()
+    for line in lines:
+        line['label'] = line['model']  # 直接把 model 放到 label 字段里（临时重命名）
+    all_model_names = [line['label'] for line in lines]
+    encoded_labels = label_encoder.fit_transform(all_model_names)
+    for i, line in enumerate(lines):
+        line['label'] = int(encoded_labels[i])
+
+    # 保存 label_encoder
+    with open("label_encoder.pkl", "wb") as f:
+        pickle.dump(label_encoder, f)
+
+    num_labels = len(label_encoder.classes_)  # 自动获取类别数，例如6类
+
+    # 加载分词器和模型
     tokenizer = BertTokenizer.from_pretrained(model_name)
     model = BertForSequenceClassification.from_pretrained(model_name, num_labels=num_labels)
 
     # 数据划分
-    lines = load_dataset(dataset_path)
-    random.shuffle(lines)
-    split = int(0.8 * len(lines)) # 原模型是0.8, 内存不够了跑不动了
+    split = int(0.85 * len(lines))
     train_dataset = prepare_dataset(lines[:split], tokenizer)
     eval_dataset = prepare_dataset(lines[split:], tokenizer)
 
     # 训练参数
     training_args = TrainingArguments(
         output_dir="./bert_output",
-        eval_strategy="epoch", # 有的transformer是evaluation_strategy字段
+        eval_strategy="epoch",
         save_strategy="epoch",
-        learning_rate=3e-5,  # 原模型是2e-5,内存不够了
+        learning_rate=2e-5,
         per_device_train_batch_size=16,
         per_device_eval_batch_size=16,
-        num_train_epochs=5,
+        num_train_epochs=10,
         weight_decay=0.01,
         logging_dir='./logs',
         load_best_model_at_end=True,
@@ -78,7 +91,6 @@ def main():
 
     # 开始训练
     trainer.train()
-    # 保存模型
     trainer.save_model("saved_bert_model")
 
 if __name__ == "__main__":
