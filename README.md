@@ -1,5 +1,5 @@
 ### 1~配置环境
-
+版本：python3.10，cuda12.1
 ```python
 python3 -m venv myenv       # 创建虚拟环境（myenv 是环境名）
 source myenv/bin/activate   # 激活虚拟环境（Linux/macOS）
